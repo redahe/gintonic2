@@ -2,12 +2,15 @@ package main
 
 import (
     // "github.com/rivo/tview"
-    "fmt"
-    "flag"
-    "path"
-    "os"
-    "log"
     "bufio"
+    "flag"
+    "fmt"
+    "log"
+    "os"
+    "os/exec"
+    "path"
+    "path/filepath"
+    "strings"
     "unicode"
 )
 
@@ -15,6 +18,8 @@ var launch_db = make(map[string]string)
 
 var shuffle bool
 var help bool
+var debug bool
+var no_ui bool
 var launch_db_filepath string
 
 var inputs []string
@@ -36,7 +41,7 @@ func readConf() {
         line := []rune(scanner.Text())
         if len(line) > 0 {
             if unicode.IsSpace(line[0]) {
-                value = string(line)
+                value = strings.TrimLeft(string(line), "\t ")
                 if len(key)>0 {
                     launch_db[key] = value
                 }
@@ -48,6 +53,9 @@ func readConf() {
     if err := scanner.Err(); err != nil {
         log.Fatal(err)
     }
+    if debug {
+        log.Print("Launch db: ", launch_db)
+    }
 }
 
 func readArgs() {
@@ -58,10 +66,11 @@ func readArgs() {
         fmt.Fprintf(os.Stderr, "Flags:\n")
         flag.PrintDefaults()
     }
-    flag.BoolVar(&shuffle, "s", false, "shuffle targets")
-    flag.StringVar(&launch_db_filepath, "c", "", "path to a custom launch_db file")
-    flag.BoolVar(&shuffle, "d", false, "print debug messages")
-    flag.BoolVar(&help, "h", false, "show this message and exit")
+    flag.BoolVar(&shuffle, "s", false, "Shuffle targets")
+    flag.StringVar(&launch_db_filepath, "c", "", "Path to a custom launch_db file")
+    flag.BoolVar(&debug, "d", false, "Print debug messages")
+    flag.BoolVar(&help, "h", false, "Show this message and exit")
+    flag.BoolVar(&no_ui, "n", false, "No UI, just launch all targets one by one")
     flag.Parse()
     if help {
         flag.Usage()
@@ -81,10 +90,51 @@ func readArgs() {
                 log.Println(err)
         }
     }
-    fmt.Println(inputs)
+    if debug {
+        log.Print("Inputs: ", inputs)
+    }
+}
+
+func launchTarget(target string, command string) {
+    cmd := exec.Command(command, target)
+    cmd.Stdout = os.Stdout // cmd.Stdout -> stdout
+    cmd.Stderr = os.Stderr // cmd.Stderr -> stderr
+    cmd.Stdin = os.Stdin // cmd.Stdin <- stdin
+    if debug {
+        log.Println("Running:", command, target)
+    }
+    err := cmd.Run()
+    if err != nil {
+        log.Printf("Command finished with error: %v", err)
+    }
+}
+
+func launchAll() {
+    for _, path := range inputs {
+        for pattern, command := range launch_db {
+            match, err := filepath.Match(pattern, path)
+            if  err != nil {
+                log.Fatal(err)
+            }
+            if match {
+                if debug {
+                    log.Print("Match: ", path, " :", pattern)
+                }
+                launchTarget(path, command)
+            }
+        }
+    }
+}
+
+func menuLoop() {
 }
 
 func main() {
     readArgs()
     readConf()
+    if no_ui {
+        launchAll()
+    } else {
+        menuLoop()
+    }
 }
